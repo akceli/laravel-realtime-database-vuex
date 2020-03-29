@@ -6,23 +6,37 @@ export const RealtimeStore = {
   setPusher(pusher) {
     this.pusher = pusher;
   },
-  subscribeToChannel(channel, vuexStore) {
+  subscribeToChannel(store, channel_id, vuexStore) {
+    let channel_string = store + '.' + channel_id;
     if (!this.pusher) {
-      console.log('Pusher is not setup yet: ', channel);
+      console.log('Pusher is not setup yet: ', channel_string);
       return;
     }
   
-    console.log('Setup Store: ', channel);
-    let [store, channel_id] = channel.split('.');
-    this.channels[channel] = this.pusher.subscribe(channel);
-    if (vuexStore) this.channels[channel].vuexStore = vuexStore;
-    if (store) this.channels[channel].store = store;
-    this.channels[channel].bind('event', payload => {
+    const channel = this.pusher.subscribe(channel_string);
+    this.channels[channel_string] = channel;
+    if (vuexStore) {
+      channel.vuexStore = vuexStore;
+    } else {
+      channel.store = {};
+    }
+    
+    channel.bind('event', payload => {
       this.processStoreChanges(payload.data);
     });
   
-    console.log('Channels: ', this.channels);
-    return http().get(`/v1/new-store/${store}/${channel_id}`);
+    return http().get(`/v1/new-store/${store}/${channel_id}`).then(response => {
+      if (channel.store) {
+        channel.store = response.data;
+        return channel.store;
+      } else if (channel.vuexStore) {
+        channel.vuexStore.commit('initStore', {
+          store: store,
+          data: response.data
+        });
+        return response.data;
+      }
+    });
   },
   unsubscribeToChannel (channel) {
     this.pusher.unsubscribe(channel);
@@ -34,6 +48,7 @@ export const RealtimeStore = {
     
     /** Ignore channels you are not subscribed to */
     if (!channel) {
+      console.log('Ignoring Channel: ', payload.channel);
       return;
     }
     
@@ -51,6 +66,8 @@ export const RealtimeStore = {
         }
         
       }, payload.delay);
+    } else if (channel.store) {
+      this.internalStoreMethods[payload.method](channel.store, payload)
     }
   },
   apiSuccessMiddleware (response) {
@@ -100,7 +117,35 @@ export const RealtimeStore = {
     setRoot(state, payload) {
       state[payload.store][payload.prop] = payload.data;
     },
+    initStore(state, payload) {
+      state[payload.store] = payload.data;
+    }
   },
+  internalStoreMethods: {
+    updateInCollection(state, payload) {
+      state[payload.prop] = state[payload.prop].map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
+    },
+    addToCollection(state, payload) {
+      let collection = state[payload.prop];
+      if (!collection.some(item => item.id === payload.data.id)) {
+        collection.push(payload.data);
+      }
+    },
+    upsertCollection(state, payload) {
+      let collection = state[payload.prop];
+      if (!collection.some(item => item.id === payload.data.id)) {
+        collection.push(payload.data);
+      } else {
+        state[payload.prop] = state[payload.prop].map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
+      }
+    },
+    removeFromCollection(state, payload) {
+      state[payload.prop] = state[payload.prop].filter(item => item.id !== payload.data.id);
+    },
+    setRoot(state, payload) {
+      state[payload.prop] = payload.data;
+    },
+  }
 };
 
 export default RealtimeStore;
