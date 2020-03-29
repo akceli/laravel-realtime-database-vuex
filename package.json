@@ -1,0 +1,24 @@
+{
+  "name": "akceli-realtime-store-npm",
+  "version": "1.0.0",
+  "description": "Javascript Realtime Store Synced to Laravel Api",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/akceli/realtime-store-npm.git"
+  },
+  "keywords": [
+    "laravel",
+    "realtime",
+    "store"
+  ],
+  "author": "Shawn Pivonka",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/akceli/realtime-store-npm/issues"
+  },
+  "homepage": "https://github.com/akceli/realtime-store-npm#readme"
+}
