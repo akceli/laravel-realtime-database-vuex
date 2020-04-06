@@ -6,10 +6,23 @@ export const RealtimeStore = {
   setPusher(pusher) {
     this.pusher = pusher;
   },
-  subscribeToChannel(store, channel_id, vuexStore) {
+  getStore(store, channel_id) {
+    return this.channels[store + '.' + channel_id];
+  },
+  getResource(store, channel_id, prop) {
+    return this.getStore(store, channel_id).resources[prop];
+  },
+  getResourceState(store, channel_id, prop) {
+    return this.getPropResource(store, channel_id, prop).state;
+  },
+  subscribeToChannel(store, channel_id, vuexStore, options) {
     let channel_string = store + '.' + channel_id;
     if (!this.pusher) {
-      console.log('Pusher is not setup yet: ', channel_string);
+      console.error('Pusher is not setup yet: ', channel_string);
+      return;
+    }
+    if (this.channels[channel_string]) {
+      console.error('You are already subscribed to this channel: ', channel_string);
       return;
     }
   
@@ -24,8 +37,16 @@ export const RealtimeStore = {
     channel.bind('event', payload => {
       this.processStoreChanges(payload.data);
     });
+    
+    let query = '?';
+    if (options && options.with) {
+      query += 'with=' + options.with + '&';
+    }
+    if (options && options.size) {
+      query += 'size=' + options.size;
+    }
   
-    return http().get(`/v1/new-store/${store}/${channel_id}`).then(response => {
+    return http().get(`${process.env.MIX_CLIENT_STORE_URL}/${store}/${channel_id}` + query).then(response => {
       if (channel.store) {
         channel.store = response.data;
         return channel.store;
@@ -34,6 +55,38 @@ export const RealtimeStore = {
           store: store,
           data: response.data
         });
+        channel.resources = [];
+        Object.keys(response.data).forEach((prop) => {
+          let url = `${process.env.MIX_CLIENT_STORE_URL}/${store}/${channel_id}/${prop}`;
+          channel.resources[prop] = {
+            channel: channel,
+            options: options,
+            appendNextPage() {
+              return http().get(url + '?size=2&offset=' + this.getCollectionLength()).then(response => {
+                response.data.data.forEach((item) => {
+                  channel.vuexStore.commit('upsertCollection', {
+                    store: store,
+                    prop: prop,
+                    data: item
+                  });
+                });
+                
+                return response;
+              });
+            },
+            appendAll() {
+              this.appendNextPage().then(response => {
+                if (response.data.data.length) {
+                  this.appendAll();
+                }
+              });
+            },
+            getCollectionLength() {
+              return this.channel.vuexStore.state[store][prop].data.length;
+            }
+          };
+        });
+  
         return response.data;
       }
     });
@@ -44,7 +97,7 @@ export const RealtimeStore = {
   },
   processStoreChanges(payload) {
     console.log('Processing payload: ', payload, this.channels);
-    const channel = this.channels[payload.channel];
+    const channel = this.channels[payload.store + '.' + payload.channel_id];
     
     /** Ignore channels you are not subscribed to */
     if (!channel) {
@@ -95,27 +148,28 @@ export const RealtimeStore = {
   },
   vuexMutations: {
     updateInCollection(state, payload) {
-      state[payload.store][payload.prop] = state[payload.store][payload.prop].map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
+      state[payload.store][payload.prop].data = state[payload.store][payload.prop].data.map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
     },
     addToCollection(state, payload) {
-      let collection = state[payload.store][payload.prop];
+      let collection = state[payload.store][payload.prop].data;
       if (!collection.some(item => item.id === payload.data.id)) {
         collection.push(payload.data);
       }
     },
     upsertCollection(state, payload) {
-      let collection = state[payload.store][payload.prop];
+      console.log('State: ', state, payload);
+      let collection = state[payload.store][payload.prop].data;
       if (!collection.some(item => item.id === payload.data.id)) {
         collection.push(payload.data);
       } else {
-        state[payload.store][payload.prop] = state[payload.store][payload.prop].map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
+        state[payload.store][payload.prop].data = state[payload.store][payload.prop].data.map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
       }
     },
     removeFromCollection(state, payload) {
-      state[payload.store][payload.prop] = state[payload.store][payload.prop].filter(item => item.id !== payload.data.id);
+      state[payload.store][payload.prop].data = state[payload.store][payload.prop].data.filter(item => item.id !== payload.data.id);
     },
     setRoot(state, payload) {
-      state[payload.store][payload.prop] = payload.data;
+      state[payload.store][payload.prop].data = payload.data;
     },
     initStore(state, payload) {
       state[payload.store] = payload.data;
