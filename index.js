@@ -10,37 +10,17 @@ export const RealtimeStore = {
   getChannel(store, channel_id) {
     return this.channels[store + '.' + channel_id];
   },
-  getStore(store, channel_id) {
-    if (!this.state || !this.state[store + '.' + channel_id]) {
-      return undefined;
-    }
-    return this.state[store][channel_id];
-    // return this.getChannel(store, channel_id).vuexStore.state[store];
-  },
-  getData(store, channel_id, prop, defaultData) {
-    if (this.getStore(store, channel_id) === undefined) {
-      if (defaultData !== undefined) {
-        return defaultData;
-      }
-      return undefined;
-    }
-    
-    return this.getStore(store, channel_id)[prop];
-  },
-  getCollectionData(store, channel_id, prop, defaultData) {
-    if (this.getData(store, channel_id) === undefined) {
-      if (defaultData !== undefined) {
-        return defaultData;
-      }
-      return undefined;
-    }
-  
-    return this.getData(store, channel_id, prop).data;
-  },
   getResource(store, channel_id, prop) {
     return this.getChannel(store, channel_id).resources[prop];
   },
-  subscribeToChannel(store, channel_id, options) {
+  subscribeToChannel(store, channel_id, options, vuexStore) {
+    let defaultOptions = {};
+    if (options) {
+      options = {...defaultOptions, ...options};
+    } else {
+      options = defaultOptions;
+    }
+    
     let channel_string = store + '.' + channel_id;
     if (!this.pusher) {
       console.error('Pusher is not setup yet: ', channel_string);
@@ -53,52 +33,47 @@ export const RealtimeStore = {
   
     const channel = this.pusher.subscribe(channel_string);
     this.channels[channel_string] = channel;
-    // if (vuexStore) {
-    //   channel.vuexStore = vuexStore;
-    // }
+    if (vuexStore) {
+      channel.vuexStore = vuexStore;
+    }
     
     channel.bind('event', payload => {
       this.processStoreChanges(payload.data);
     });
     
     let query = '?';
-    if (options && options.with) {
-      query += 'with=' + options.with + '&';
+    if (options.required) {
+      query += 'with=' + options.required + '&';
     }
-    if (options && options.size) {
+    if (options.size) {
       query += 'size=' + options.size;
     }
   
     return http().get(`${process.env.MIX_CLIENT_STORE_URL}/${store}/${channel_id}` + query).then(response => {
-      this.state[store + '.' + channel_id] = response.data;
-      // this.state[store][channel_id] = response.data;
-      
       if (channel.vuexStore) {
         channel.vuexStore.commit('initStore', {
           store: store,
+          channel_id: channel_id,
           data: response.data
         });
       }
       
       channel.resources = [];
-      let internalMethods = this.internalStoreMethods;
-      let state = this.state[store + '.' + channel_id];
       Object.keys(response.data).forEach((prop) => {
         let url = `${process.env.MIX_CLIENT_STORE_URL}/${store}/${channel_id}/${prop}`;
         channel.resources[prop] = {
           channel: channel,
           options: options,
           appendNextPage() {
-            return http().get(url + '?size=10&offset=' + this.getCollectionLength()).then(response => {
+            return http().get(url + '?offset=' + this.getCollectionLength()).then(response => {
               response.data.data.forEach((item) => {
-                let payload = {prop: prop, data: item};
-                console.log('State: ', state, 'Payload: ', payload);
-                internalMethods.upsertCollection(state, payload);
+                // let payload = {prop: prop, data: item, channel_id: channel_id, store: store};
                 if (channel.vuexStore) {
                   channel.vuexStore.commit('upsertCollection', {
                     store: store,
                     prop: prop,
-                    data: item
+                    data: item,
+                    channel_id: channel_id
                   });
                 }
               });
@@ -114,9 +89,7 @@ export const RealtimeStore = {
             });
           },
           getCollectionLength() {
-            // console.log('State: ', state[prop].data.length);
-            return state[prop].data.length;
-            // return this.channel.vuexStore.state[store][prop].data.length;
+            return this.channel.vuexStore.state[store][channel_id][prop].data.length;
           }
         };
       });
@@ -126,10 +99,12 @@ export const RealtimeStore = {
   },
   unsubscribeToChannel (channel) {
     this.pusher.unsubscribe(channel);
+    if (channel.vuexStore) {
+      delete channel.vuexStore.state[channel.store][channel.channel_id];
+    }
     delete this.channels[channel];
   },
   processStoreChanges(payload) {
-    console.log('Processing payload: ', payload, this.channels);
     const channel = this.channels[payload.store + '.' + payload.channel_id];
     
     /** Ignore channels you are not subscribed to */
@@ -139,7 +114,6 @@ export const RealtimeStore = {
     }
     
     /** If channel has a Vuex Store */
-    
     if (channel.vuexStore) {
       setTimeout(() => {
         if (payload.data) {
@@ -152,14 +126,11 @@ export const RealtimeStore = {
         }
         
       }, payload.delay);
-    } else if (channel.store) {
-      this.internalStoreMethods[payload.method](this.getStore(payload.store, payload.channel_id), payload)
     }
   },
   apiSuccessMiddleware (response) {
     if (response.data.clientStoreChanges) {
       response.data.clientStoreChanges.forEach(payload => {
-        console.log('Http Payload Change', payload);
         this.processStoreChanges(payload)
       });
       
@@ -181,58 +152,36 @@ export const RealtimeStore = {
   },
   vuexMutations: {
     updateInCollection(state, payload) {
-      state[payload.store][payload.prop].data = state[payload.store][payload.prop].data.map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
+      state[payload.store][payload.channel_id][payload.prop].data = state[payload.store][payload.channel_id][payload.prop].data.map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
     },
     addToCollection(state, payload) {
-      let collection = state[payload.store][payload.prop].data;
+      let collection = state[payload.store][payload.channel_id][payload.prop].data;
       if (!collection.some(item => item.id === payload.data.id)) {
         collection.push(payload.data);
       }
     },
     upsertCollection(state, payload) {
-      console.log('State: ', state, payload);
-      let collection = state[payload.store][payload.prop].data;
+      let collection = state[payload.store][payload.channel_id][payload.prop].data;
       if (!collection.some(item => item.id === payload.data.id)) {
         collection.push(payload.data);
       } else {
-        state[payload.store][payload.prop].data = state[payload.store][payload.prop].data.map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
+        state[payload.store][payload.channel_id][payload.prop].data = state[payload.store][payload.channel_id][payload.prop].data.map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
       }
     },
     removeFromCollection(state, payload) {
-      state[payload.store][payload.prop].data = state[payload.store][payload.prop].data.filter(item => item.id !== payload.data.id);
+      state[payload.store][payload.channel_id][payload.prop].data = state[payload.store][payload.channel_id][payload.prop].data.filter(item => item.id !== payload.data.id);
     },
     setRoot(state, payload) {
-      state[payload.store][payload.prop].data = payload.data;
+      state[payload.store][payload.channel_id][payload.prop].data = payload.data;
     },
     initStore(state, payload) {
-      state[payload.store] = payload.data;
+      console.log('Payload: ', payload);
+      if (!state[payload.store]) {
+        state[payload.store] = {};
+      }
+      state[payload.store][payload.channel_id] = payload.data;
     }
   },
-  internalStoreMethods: {
-    updateInCollection(state, payload) {
-      state[payload.prop] = state[payload.prop].map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
-    },
-    addToCollection(state, payload) {
-      let collection = state[payload.prop];
-      if (!collection.some(item => item.id === payload.data.id)) {
-        collection.push(payload.data);
-      }
-    },
-    upsertCollection(state, payload) {
-      let collection = state[payload.prop];
-      if (!collection.some(item => item.id === payload.data.id)) {
-        collection.push(payload.data);
-      } else {
-        state[payload.prop] = state[payload.prop].map(item => item.id === payload.data.id ? {...item, ...payload.data} : item);
-      }
-    },
-    removeFromCollection(state, payload) {
-      state[payload.prop] = state[payload.prop].filter(item => item.id !== payload.data.id);
-    },
-    setRoot(state, payload) {
-      state[payload.prop] = payload.data;
-    },
-  }
 };
 
 export default RealtimeStore;
