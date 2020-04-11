@@ -12,8 +12,12 @@ export const RealtimeStore = {
     this.vuexStore = store;
   },
   setVue(Vue) {
-    console.log('Setting Vue', Vue);
     this.Vue = Vue;
+  },
+  init(Vue, store, pusher) {
+    this.setVue(Vue);
+    this.setStore(store);
+    this.setPusher(pusher);
   },
   getChannel(store, channel_id) {
     return this.channels[store + ':' + channel_id];
@@ -90,8 +94,8 @@ export const RealtimeStore = {
             });
           },
           getCollectionLength() {
-            return vuexStore.state[store][prop].data.length;
-            // return vuexStore.state[store + ':' + channel_id][prop].data.length;
+            // return vuexStore.state[store][prop].data.length;
+            return vuexStore.state[store + '.' + channel_id][prop].data.length;
           }
         };
       });
