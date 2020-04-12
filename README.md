@@ -1,10 +1,3 @@
-### Welcome to akceli
+### Vuex Client Implementation for the Laravel Realtime Database Package
 
-
-```dotenv
-
-# Client Store
-CLIENT_STORE_URL=v1/client_store
-MIX_CLIENT_STORE_URL="${CLIENT_STORE_URL}"
-
-```
+##### Docs:  https://laravel-realtime-database.akceli.io/
