@@ -1,5 +1,5 @@
 {
-  "name": "akceli-realtime-store-npm",
+  "name": "larave-realtime-database",
   "version": "1.0.0",
   "description": "Javascript Realtime Store Synced to Laravel Api",
   "main": "index.js",
