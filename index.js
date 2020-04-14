@@ -1,8 +1,7 @@
-import http from '@/api/http';
-
 export const RealtimeStore = {
   pusher: null,
   Vue: null,
+  axios: null,
   vuexStore: {},
   channels: [],
   setPusher(pusher) {
@@ -14,9 +13,13 @@ export const RealtimeStore = {
   setVue(Vue) {
     this.Vue = Vue;
   },
-  init(Vue, store, pusher) {
+  setAxios(axios) {
+    this.axios = axios;
+  },
+  init(Vue, store, axios, pusher) {
     this.setVue(Vue);
     this.setStore(store);
+    this.setAxios(axios);
     this.setPusher(pusher);
   },
   getChannel(store, channel_id) {
@@ -59,7 +62,7 @@ export const RealtimeStore = {
     }
   
     const vuexStore = this.vuexStore;
-    return http().get(`${process.env.MIX_CLIENT_STORE_URL}/${store}/${channel_id}` + query).then(response => {
+    return this.axios.get(`/${store}/${channel_id}` + query).then(response => {
       vuexStore.commit('initStore', {
         store: store,
         channel_id: channel_id,
@@ -68,12 +71,12 @@ export const RealtimeStore = {
   
       channel.resources = [];
       Object.keys(response.data).forEach((prop) => {
-        let url = `${process.env.MIX_CLIENT_STORE_URL}/${store}/${channel_id}/${prop}`;
+        let url = `/${store}/${channel_id}/${prop}`;
         channel.resources[prop] = {
           channel: channel,
           options: options,
           appendNextPage() {
-            return http().get(url + '?offset=' + this.getCollectionLength()).then(response => {
+            return RealtimeStore.axios.get(url + '?offset=' + this.getCollectionLength()).then(response => {
               response.data.data.forEach((item) => {
                 vuexStore.commit('upsertCollection', {
                   store: store,
@@ -94,7 +97,6 @@ export const RealtimeStore = {
             });
           },
           getCollectionLength() {
-            // return vuexStore.state[store][prop].data.length;
             return vuexStore.state[store + '.' + channel_id][prop].data.length;
           }
         };
@@ -121,7 +123,7 @@ export const RealtimeStore = {
       if (payload.data) {
         this.vuexStore.commit(payload.method, payload);
       } else {
-        http().get(payload.api_call).then(res => {
+        this.axios.get(payload.api_call).then(res => {
           payload.data = res.data;
           this.vuexStore.commit(payload.method, payload);
         });

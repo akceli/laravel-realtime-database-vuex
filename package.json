@@ -1,5 +1,5 @@
 {
-  "name": "larave-realtime-database",
+  "name": "laravel-realtime-database-vuex",
   "version": "1.0.0",
   "description": "Javascript Realtime Store Synced to Laravel Api",
   "main": "index.js",
