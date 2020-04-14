@@ -45,7 +45,7 @@ export const RealtimeStore = {
       console.error('You are already subscribed to this channel: ', channel_string);
       return;
     }
-  
+    
     const channel = this.pusher.subscribe(channel_string);
     this.channels[channel_string] = channel;
     
@@ -60,7 +60,7 @@ export const RealtimeStore = {
     if (options.size) {
       query += 'size=' + options.size;
     }
-  
+    
     const vuexStore = this.vuexStore;
     return this.axios.get(`/${store}/${channel_id}` + query).then(response => {
       vuexStore.commit('initStore', {
@@ -68,7 +68,7 @@ export const RealtimeStore = {
         channel_id: channel_id,
         data: response.data
       });
-  
+      
       channel.resources = [];
       Object.keys(response.data).forEach((prop) => {
         let url = `/${store}/${channel_id}/${prop}`;
@@ -85,7 +85,7 @@ export const RealtimeStore = {
                   channel_id: channel_id
                 });
               });
-          
+              
               return response;
             });
           },
@@ -101,11 +101,12 @@ export const RealtimeStore = {
           }
         };
       });
-  
+      
       return response.data;
     });
   },
-  unsubscribeToChannel (channel) {
+  unsubscribeFromChannel (store, channel_id) {
+    const channel = this.getChannel(store, channel_id);
     this.pusher.unsubscribe(channel);
     delete this.vuexStore.state[channel.store + ':' + channel.channel_id];
     delete this.channels[channel];
@@ -118,7 +119,7 @@ export const RealtimeStore = {
       console.log('Ignoring Channel: ', payload.channel);
       return;
     }
-  
+    
     setTimeout(() => {
       if (payload.data) {
         this.vuexStore.commit(payload.method, payload);
@@ -128,7 +129,7 @@ export const RealtimeStore = {
           this.vuexStore.commit(payload.method, payload);
         });
       }
-    
+      
     }, payload.delay);
   },
   apiSuccessMiddleware (response) {
@@ -175,7 +176,7 @@ export const RealtimeStore = {
       state[payload.store + '.' + payload.channel_id][payload.prop].data = state[payload.store + '.' + payload.channel_id][payload.prop].data.filter(item => item.id !== payload.data.id);
     },
     setRoot(state, payload) {
-      state[payload.store + '.' + payload.channel_id][payload.prop].data = payload.data;
+      state[payload.store + '.' + payload.channel_id][payload.prop] = payload.data;
     },
     initStore(state, payload) {
       if (!state[payload.store]) {
